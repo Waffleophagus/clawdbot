@@ -1,0 +1,110 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/clawdbot/clawdbot.git
+
+      - name: Fetch upstream
+        run: git fetch upstream --tags
+
+      - name: Check for merge conflicts
+        id: check-merge
+        run: |
+          git checkout main
+          if git merge --no-commit --no-ff upstream/main 2>/dev/null; then
+            echo "can_merge=true" >> "$GITHUB_OUTPUT"
+            git merge --abort 2>/dev/null || true
+          else
+            echo "can_merge=false" >> "$GITHUB_OUTPUT"
+            git merge --abort 2>/dev/null || true
+          fi
+
+      - name: Merge upstream/main
+        if: steps.check-merge.outputs.can_merge == 'true'
+        run: |
+          git merge upstream/main --no-edit
+          git push origin main
+
+      - name: Create PR on conflict
+        if: steps.check-merge.outputs.can_merge == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync-upstream-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git reset --hard upstream/main
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Sync upstream (manual merge required)" \
+            --body "$(cat <<'EOF'
+          ## Automatic sync from upstream failed
+
+          There are merge conflicts that need manual resolution.
+
+          **Upstream:** clawdbot/clawdbot
+          **Branch:** This branch contains the latest upstream changes.
+
+          Please merge this PR manually, resolving any conflicts.
+          EOF
+          )" \
+            --base main \
+            --head "$BRANCH"
+
+      - name: Sync new tags
+        if: steps.check-merge.outputs.can_merge == 'true'
+        run: |
+          # Get tags that exist in upstream but not in origin
+          UPSTREAM_TAGS=$(git tag -l)
+          git fetch origin --tags
+          ORIGIN_TAGS=$(git tag -l)
+
+          # Find new tags from upstream
+          for tag in $UPSTREAM_TAGS; do
+            if ! git ls-remote --tags origin | grep -q "refs/tags/$tag$"; then
+              echo "Pushing new tag: $tag"
+              git push origin "$tag"
+            fi
+          done
+
+      - name: Create issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Upstream sync failed" \
+            --body "$(cat <<'EOF'
+          ## Upstream sync workflow failed
+
+          The automatic sync from upstream (clawdbot/clawdbot) has failed.
+
+          **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Please check the workflow logs for details.
+          EOF
+          )"
