@@ -8,7 +8,6 @@ import {
 import { defaultRuntime } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
-import { runDaemonRestart } from "./daemon-cli.js";
 
 export type UpdateCommandOptions = {
   json?: boolean;
@@ -141,7 +140,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       );
       defaultRuntime.log(
         theme.muted(
-          "Examples: `npm i -g clawdbot@latest` or `pnpm add -g clawdbot@latest`",
+          "Examples: `npm i -g clawdbot@latest`, `pnpm add -g clawdbot@latest`, or `bun add -g clawdbot@latest`",
         ),
       );
     }
@@ -156,9 +155,20 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       defaultRuntime.log(theme.heading("Restarting daemon..."));
     }
     try {
-      await runDaemonRestart();
-      if (!opts.json) {
+      const { runDaemonRestart } = await import("./daemon-cli.js");
+      const restarted = await runDaemonRestart();
+      if (!opts.json && restarted) {
         defaultRuntime.log(theme.success("Daemon restarted successfully."));
+        defaultRuntime.log("");
+        process.env.CLAWDBOT_UPDATE_IN_PROGRESS = "1";
+        try {
+          const { doctorCommand } = await import("../commands/doctor.js");
+          await doctorCommand(defaultRuntime, { nonInteractive: true });
+        } catch (err) {
+          defaultRuntime.log(theme.warn(`Doctor failed: ${String(err)}`));
+        } finally {
+          delete process.env.CLAWDBOT_UPDATE_IN_PROGRESS;
+        }
       }
     } catch (err) {
       if (!opts.json) {
@@ -206,7 +216,7 @@ Examples:
 
 Notes:
   - For git installs: fetches, rebases, installs deps, builds, and runs doctor
-  - For npm installs: use npm/pnpm to reinstall (see docs/install/updating.md)
+  - For global installs: use npm/pnpm/bun to reinstall (see docs/install/updating.md)
   - Skips update if the working directory has uncommitted changes
 
 ${theme.muted("Docs:")} ${formatDocsLink("/updating", "docs.clawd.bot/updating")}`,

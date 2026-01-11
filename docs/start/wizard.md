@@ -32,7 +32,7 @@ The wizard starts with **QuickStart** (defaults) vs **Advanced** (full control).
 - Local gateway (loopback)
 - Workspace default (or existing workspace)
 - Gateway port **18789**
-- Gateway auth **Off** (loopback only)
+- Gateway auth **Token** (auto‑generated, even on loopback)
 - Tailscale exposure **Off**
 - Telegram + WhatsApp DMs default to **allowlist** (you’ll be prompted for your phone number)
 
@@ -78,7 +78,7 @@ Tip: `--json` does **not** imply non-interactive mode. Use `--non-interactive` (
    - **OpenAI Code (Codex) subscription (OAuth)**: browser flow; paste the `code#state`.
      - Sets `agents.defaults.model` to `openai-codex/gpt-5.2` when model is unset or `openai/*`.
    - **OpenAI API key**: uses `OPENAI_API_KEY` if present or prompts for a key, then saves it to `~/.clawdbot/.env` so launchd can read it.
-   - **OpenCode Zen (multi-model proxy)**: prompts for `OPENCODE_ZEN_API_KEY` (get it at https://opencode.ai/auth).
+   - **OpenCode Zen (multi-model proxy)**: prompts for `OPENCODE_API_KEY` (or `OPENCODE_ZEN_API_KEY`, get it at https://opencode.ai/auth).
    - **API key**: stores the key for you.
    - **MiniMax M2.1 (minimax.io)**: config is auto‑written for the OpenAI-compatible `/v1` endpoint.
    - **MiniMax API (platform.minimax.io)**: config is auto‑written for the Anthropic-compatible `/anthropic` endpoint.
@@ -92,12 +92,13 @@ Tip: `--json` does **not** imply non-interactive mode. Use `--non-interactive` (
 3) **Workspace**
    - Default `~/clawd` (configurable).
    - Seeds the workspace files needed for the agent bootstrap ritual.
-   - Full workspace layout + backup guide: [`docs/agent-workspace.md`](/concepts/agent-workspace)
+   - Full workspace layout + backup guide: [Agent workspace](/concepts/agent-workspace)
 
 4) **Gateway**
    - Port, bind, auth mode, tailscale exposure.
-   - Auth recommendation: keep **Off** for single-machine loopback setups. Use **Token** for multi-machine access or non-loopback binds.
-   - Non‑loopback binds require auth.
+   - Auth recommendation: keep **Token** even for loopback so local WS clients must authenticate.
+   - Disable auth only if you fully trust every local process.
+   - Non‑loopback binds still require auth.
 
 5) **Providers**
    - WhatsApp: optional QR login.
@@ -135,7 +136,7 @@ Remote mode configures a local client to connect to a Gateway elsewhere.
 
 What you’ll set:
 - Remote Gateway URL (`ws://...`)
-- Optional token
+- Token if the remote Gateway requires auth (recommended)
 
 Notes:
 - No remote installs or daemon changes are performed.
@@ -205,7 +206,7 @@ OpenCode Zen example:
 clawdbot onboard --non-interactive \
   --mode local \
   --auth-choice opencode-zen \
-  --opencode-zen-api-key "$OPENCODE_ZEN_API_KEY" \
+  --opencode-zen-api-key "$OPENCODE_API_KEY" \
   --gateway-port 18789 \
   --gateway-bind loopback
 ```
@@ -259,7 +260,7 @@ Sessions are stored under `~/.clawdbot/agents/<agentId>/sessions/`.
 
 ## Related docs
 
-- macOS app onboarding: [`docs/onboarding.md`](/start/onboarding)
-- Config reference: [`docs/configuration.md`](/gateway/configuration)
-- Providers: [`docs/whatsapp.md`](/providers/whatsapp), [`docs/telegram.md`](/providers/telegram), [`docs/discord.md`](/providers/discord), [`docs/signal.md`](/providers/signal), [`docs/imessage.md`](/providers/imessage)
-- Skills: [`docs/skills.md`](/tools/skills), [`docs/skills-config.md`](/tools/skills-config)
+- macOS app onboarding: [Onboarding](/start/onboarding)
+- Config reference: [Gateway configuration](/gateway/configuration)
+- Providers: [WhatsApp](/providers/whatsapp), [Telegram](/providers/telegram), [Discord](/providers/discord), [Signal](/providers/signal), [iMessage](/providers/imessage)
+- Skills: [Skills](/tools/skills), [Skills config](/tools/skills-config)

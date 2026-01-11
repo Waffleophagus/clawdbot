@@ -1038,6 +1038,46 @@ is already present in `agents.defaults.models`:
 
 If you configure the same alias name (case-insensitive) yourself, your value wins (defaults never override).
 
+#### `agents.defaults.cliBackends` (CLI fallback)
+
+Optional CLI backends for text-only fallback runs (no tool calls). These are useful as a
+backup path when API providers fail. Image pass-through is supported when you configure
+an `imageArg` that accepts file paths.
+
+Notes:
+- CLI backends are **text-first**; tools are always disabled.
+- Sessions are supported when `sessionArg` is set; session ids are persisted per backend.
+- For `claude-cli`, defaults are wired in. Override the command path if PATH is minimal
+  (launchd/systemd).
+
+Example:
+
+```json5
+{
+  agents: {
+    defaults: {
+      cliBackends: {
+        "claude-cli": {
+          command: "/opt/homebrew/bin/claude"
+        },
+        "my-cli": {
+          command: "my-cli",
+          args: ["--json"],
+          output: "json",
+          modelArg: "--model",
+          sessionArg: "--session",
+          sessionMode: "existing",
+          systemPromptArg: "--system",
+          systemPromptWhen: "first",
+          imageArg: "--image",
+          imageMode: "repeat"
+        }
+      }
+    }
+  }
+}
+```
+
 ```json5
 {
   agents: {
@@ -1227,6 +1267,7 @@ Z.AI models are available as `zai/<model>` (e.g. `zai/glm-4.7`) and require
 - `every`: duration string (`ms`, `s`, `m`, `h`); default unit minutes. Default:
   `30m`. Set `0m` to disable.
 - `model`: optional override model for heartbeat runs (`provider/model`).
+- `includeReasoning`: when `true`, heartbeats will also deliver the separate `Reasoning:` message when available (same shape as `/reasoning on`). Default: `false`.
 - `target`: optional delivery provider (`last`, `whatsapp`, `telegram`, `discord`, `slack`, `signal`, `imessage`, `none`). Default: `last`.
 - `to`: optional recipient override (provider-specific id, e.g. E.164 for WhatsApp, chat id for Telegram).
 - `prompt`: optional override for the heartbeat body (default: `Read HEARTBEAT.md if exists. Consider outstanding tasks. Checkup sometimes on your human during (user local) day time.`). Overrides are sent verbatim; include a `Read HEARTBEAT.md if exists` line if you still want the file read.
@@ -1375,6 +1416,10 @@ Legacy: `perSession` is still supported (`true` → `scope: "session"`,
           noVncPort: 6080,
           headless: false,
           enableNoVnc: true,
+          allowHostControl: false,
+          allowedControlUrls: ["http://10.0.0.42:18791"],
+          allowedControlHosts: ["browser.lab.local", "10.0.0.42"],
+          allowedControlPorts: [18791],
           autoStart: true,
           autoStartTimeoutMs: 12000
         },
@@ -1417,12 +1462,24 @@ the noVNC URL is injected into the system prompt so the agent can reference it.
 This does not require `browser.enabled` in the main config; the sandbox control
 URL is injected per session.
 
+`agents.defaults.sandbox.browser.allowHostControl` (default: false) allows
+sandboxed sessions to explicitly target the **host** browser control server
+via the browser tool (`target: "host"`). Leave this off if you want strict
+sandbox isolation.
+
+Allowlists for remote control:
+- `allowedControlUrls`: exact control URLs permitted for `target: "custom"`.
+- `allowedControlHosts`: hostnames permitted (hostname only, no port).
+- `allowedControlPorts`: ports permitted (defaults: http=80, https=443).
+Defaults: all allowlists are unset (no restriction). `allowHostControl` defaults to false.
+
 ### `models` (custom providers + base URLs)
 
 Clawdbot uses the **pi-coding-agent** model catalog. You can add custom providers
 (LiteLLM, local OpenAI-compatible servers, Anthropic proxies, etc.) by writing
 `~/.clawdbot/agents/<agentId>/agent/models.json` or by defining the same schema inside your
 Clawdbot config under `models.providers`.
+Provider-by-provider overview + examples: [/concepts/model-providers](/concepts/model-providers).
 
 When `models.providers` is present, Clawdbot writes/merges a `models.json` into
 `~/.clawdbot/agents/<agentId>/agent/` on startup:
@@ -1467,10 +1524,12 @@ Select the model via `agents.defaults.model.primary` (provider/model).
 
 ### OpenCode Zen (multi-model proxy)
 
-OpenCode Zen is an OpenAI-compatible proxy at `https://opencode.ai/zen/v1`. Get an API key at https://opencode.ai/auth and set `OPENCODE_ZEN_API_KEY`.
+OpenCode Zen is a multi-model gateway with per-model endpoints. Clawdbot uses
+the built-in `opencode` provider from pi-ai; set `OPENCODE_API_KEY` (or
+`OPENCODE_ZEN_API_KEY`) from https://opencode.ai/auth.
 
 Notes:
-- Model refs use `opencode-zen/<modelId>` (example: `opencode-zen/claude-opus-4-5`).
+- Model refs use `opencode/<modelId>` (example: `opencode/claude-opus-4-5`).
 - If you enable an allowlist via `agents.defaults.models`, add each model you plan to use.
 - Shortcut: `clawdbot onboard --auth-choice opencode-zen`.
 
@@ -1478,29 +1537,8 @@ Notes:
 {
   agents: {
     defaults: {
-      model: { primary: "opencode-zen/claude-opus-4-5" },
-      models: { "opencode-zen/claude-opus-4-5": { alias: "Opus" } }
-    }
-  },
-  models: {
-    mode: "merge",
-    providers: {
-      "opencode-zen": {
-        baseUrl: "https://opencode.ai/zen/v1",
-        apiKey: "${OPENCODE_ZEN_API_KEY}",
-        api: "openai-completions",
-        models: [
-          {
-            id: "claude-opus-4-5",
-            name: "Claude Opus 4.5",
-            reasoning: true,
-            input: ["text", "image"],
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: 200000,
-            maxTokens: 32000
-          }
-        ]
-      }
+      model: { primary: "opencode/claude-opus-4-5" },
+      models: { "opencode/claude-opus-4-5": { alias: "Opus" } }
     }
   }
 }
@@ -1801,7 +1839,7 @@ Defaults:
     port: 18789, // WS + HTTP multiplex
     bind: "loopback",
     // controlUi: { enabled: true, basePath: "/clawdbot" }
-    // auth: { mode: "token", token: "your-token" } // token is for multi-machine CLI access
+    // auth: { mode: "token", token: "your-token" } // token gates WS + Control UI access
     // tailscale: { mode: "off" | "serve" | "funnel" }
   }
 }
@@ -1821,8 +1859,10 @@ Related docs:
 Notes:
 - `clawdbot gateway` refuses to start unless `gateway.mode` is set to `local` (or you pass the override flag).
 - `gateway.port` controls the single multiplexed port used for WebSocket + HTTP (control UI, hooks, A2UI).
+- OpenAI Chat Completions endpoint: **disabled by default**; enable with `gateway.http.endpoints.chatCompletions.enabled: true`.
 - Precedence: `--port` > `CLAWDBOT_GATEWAY_PORT` > `gateway.port` > default `18789`.
 - Non-loopback binds (`lan`/`tailnet`/`auto`) require auth. Use `gateway.auth.token` (or `CLAWDBOT_GATEWAY_TOKEN`).
+- The onboarding wizard generates a gateway token by default (even on loopback).
 - `gateway.remote.token` is **only** for remote CLI calls; it does not enable local gateway auth. `gateway.token` is ignored.
 
 Auth and Tailscale:
@@ -1912,7 +1952,7 @@ Convenience flags (CLI):
 - `clawdbot --dev …` → uses `~/.clawdbot-dev` + shifts ports from base `19001`
 - `clawdbot --profile <name> …` → uses `~/.clawdbot-<name>` (port via config/env/flags)
 
-See [`docs/gateway.md`](/gateway) for the derived port mapping (gateway/bridge/browser/canvas).
+See [Gateway runbook](/gateway) for the derived port mapping (gateway/bridge/browser/canvas).
 
 Example:
 ```bash
@@ -2106,7 +2146,7 @@ clawdbot dns setup --apply
 
 ## Template variables
 
-Template placeholders are expanded in `audio.transcription.command` (and any future templated command fields).
+Template placeholders are expanded in `tools.audio.transcription.args` (and any future templated argument fields).
 
 | Variable | Description |
 |----------|-------------|

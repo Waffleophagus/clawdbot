@@ -45,6 +45,7 @@ describe("buildEmbeddedSandboxInfo", () => {
         allow: ["bash"],
         deny: ["browser"],
       },
+      browserAllowHostControl: true,
       browser: {
         controlUrl: "http://localhost:9222",
         noVncUrl: "http://localhost:6080",
@@ -59,6 +60,50 @@ describe("buildEmbeddedSandboxInfo", () => {
       agentWorkspaceMount: undefined,
       browserControlUrl: "http://localhost:9222",
       browserNoVncUrl: "http://localhost:6080",
+      hostBrowserAllowed: true,
+    });
+  });
+
+  it("includes elevated info when allowed", () => {
+    const sandbox = {
+      enabled: true,
+      sessionKey: "session:test",
+      workspaceDir: "/tmp/clawdbot-sandbox",
+      agentWorkspaceDir: "/tmp/clawdbot-workspace",
+      workspaceAccess: "none",
+      containerName: "clawdbot-sbx-test",
+      containerWorkdir: "/workspace",
+      docker: {
+        image: "clawdbot-sandbox:bookworm-slim",
+        containerPrefix: "clawdbot-sbx-",
+        workdir: "/workspace",
+        readOnlyRoot: true,
+        tmpfs: ["/tmp"],
+        network: "none",
+        user: "1000:1000",
+        capDrop: ["ALL"],
+        env: { LANG: "C.UTF-8" },
+      },
+      tools: {
+        allow: ["bash"],
+        deny: ["browser"],
+      },
+      browserAllowHostControl: false,
+    } satisfies SandboxContext;
+
+    expect(
+      buildEmbeddedSandboxInfo(sandbox, {
+        enabled: true,
+        allowed: true,
+        defaultLevel: "on",
+      }),
+    ).toEqual({
+      enabled: true,
+      workspaceDir: "/tmp/clawdbot-sandbox",
+      workspaceAccess: "none",
+      agentWorkspaceMount: undefined,
+      hostBrowserAllowed: false,
+      elevated: { allowed: true, defaultLevel: "on" },
     });
   });
 });

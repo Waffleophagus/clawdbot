@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
@@ -16,6 +16,7 @@ import { ensureClawdbotModelsJson } from "../agents/models-config.js";
 import { loadConfig } from "../config/config.js";
 import { resolveUserPath } from "../utils.js";
 import { GatewayClient } from "./client.js";
+import { renderCatNoncePngBase64 } from "./live-image-probe.js";
 import { startGatewayServer } from "./server.js";
 
 const LIVE = process.env.LIVE === "1" || process.env.CLAWDBOT_LIVE_TEST === "1";
@@ -24,6 +25,9 @@ const ALL_MODELS =
   process.env.CLAWDBOT_LIVE_GATEWAY_ALL_MODELS === "1" ||
   process.env.CLAWDBOT_LIVE_GATEWAY_MODELS === "all";
 const EXTRA_TOOL_PROBES = process.env.CLAWDBOT_LIVE_GATEWAY_TOOL_PROBE === "1";
+const EXTRA_IMAGE_PROBES =
+  process.env.CLAWDBOT_LIVE_GATEWAY_IMAGE_PROBE === "1";
+const PROVIDERS = parseFilter(process.env.CLAWDBOT_LIVE_GATEWAY_PROVIDERS);
 
 const describeLive = LIVE && GATEWAY_LIVE ? describe : describe.skip;
 
@@ -58,6 +62,53 @@ function isMeaningful(text: string): boolean {
   const words = trimmed.split(/\s+/g).filter(Boolean);
   if (words.length < 12) return false;
   return true;
+}
+
+function isGoogleModelNotFoundText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (!/not found/i.test(trimmed)) return false;
+  if (/models\/.+ is not found for api version/i.test(trimmed)) return true;
+  if (/"status"\s*:\s*"NOT_FOUND"/.test(trimmed)) return true;
+  if (/"code"\s*:\s*404/.test(trimmed)) return true;
+  return false;
+}
+
+function randomImageProbeCode(len = 10): string {
+  const alphabet = "2345689ABCEF";
+  const bytes = randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i += 1) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const aLen = a.length;
+  const bLen = b.length;
+  if (aLen === 0) return bLen;
+  if (bLen === 0) return aLen;
+
+  let prev = Array.from({ length: bLen + 1 }, (_v, idx) => idx);
+  let curr = Array.from({ length: bLen + 1 }, () => 0);
+
+  for (let i = 1; i <= aLen; i += 1) {
+    curr[0] = i;
+    const aCh = a.charCodeAt(i - 1);
+    for (let j = 1; j <= bLen; j += 1) {
+      const cost = aCh === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1, // delete
+        curr[j - 1] + 1, // insert
+        prev[j - 1] + cost, // substitute
+      );
+    }
+    [prev, curr] = [curr, prev];
+  }
+
+  return prev[bLen] ?? Number.POSITIVE_INFINITY;
 }
 
 async function getFreePort(): Promise<number> {
@@ -193,6 +244,7 @@ describeLive("gateway live (dev agent, profile keys)", () => {
       const candidates: Array<Model<Api>> = [];
       for (const model of wanted) {
         const id = `${model.provider}/${model.id}`;
+        if (PROVIDERS && !PROVIDERS.has(model.provider)) continue;
         if (filter && !filter.has(id)) continue;
         try {
           // eslint-disable-next-line no-await-in-loop
@@ -204,6 +256,14 @@ describeLive("gateway live (dev agent, profile keys)", () => {
       }
 
       expect(candidates.length).toBeGreaterThan(0);
+      const imageCandidates = EXTRA_IMAGE_PROBES
+        ? candidates.filter((m) => m.input?.includes("image"))
+        : [];
+      if (EXTRA_IMAGE_PROBES && imageCandidates.length === 0) {
+        throw new Error(
+          "image probe enabled but no selected models advertise image support; set CLAWDBOT_LIVE_GATEWAY_MODELS to include an image-capable model",
+        );
+      }
 
       // Build a temp config that allows all selected models, so session overrides stick.
       const lmstudioProvider = cfg.models?.providers?.lmstudio;
@@ -278,6 +338,11 @@ describeLive("gateway live (dev agent, profile keys)", () => {
               key: sessionKey,
               model: modelKey,
             });
+            // Reset between models: avoids cross-provider transcript incompatibilities
+            // (notably OpenAI Responses requiring reasoning replay for function_call items).
+            await client.request<Record<string, unknown>>("sessions.reset", {
+              key: sessionKey,
+            });
 
             // “Meaningful” direct prompt (no tools).
             const runId = randomUUID();
@@ -297,6 +362,14 @@ describeLive("gateway live (dev agent, profile keys)", () => {
               throw new Error(`agent status=${String(payload?.status)}`);
             }
             const text = extractPayloadText(payload?.result);
+            if (
+              model.provider === "google" &&
+              isGoogleModelNotFoundText(text)
+            ) {
+              // Catalog drift: model IDs can disappear or become unavailable on the API.
+              // Treat as skip when scanning "all models" for Google.
+              continue;
+            }
             if (!isMeaningful(text)) throw new Error(`not meaningful: ${text}`);
             if (
               !/\bmicro\s*-?\s*tasks?\b/i.test(text) ||
@@ -363,6 +436,53 @@ describeLive("gateway live (dev agent, profile keys)", () => {
               }
 
               await fs.rm(toolWritePath, { force: true });
+            }
+
+            if (EXTRA_IMAGE_PROBES && model.input?.includes("image")) {
+              const imageCode = randomImageProbeCode(10);
+              const imageBase64 = renderCatNoncePngBase64(imageCode);
+              const runIdImage = randomUUID();
+
+              const imageProbe = await client.request<AgentFinalPayload>(
+                "agent",
+                {
+                  sessionKey,
+                  idempotencyKey: `idem-${runIdImage}-image`,
+                  message:
+                    "Look at the attached image. Reply with exactly two tokens separated by a single space: " +
+                    "(1) the animal shown or written in the image, lowercase; " +
+                    "(2) the code printed in the image, uppercase. No extra text.",
+                  attachments: [
+                    {
+                      mimeType: "image/png",
+                      fileName: `probe-${runIdImage}.png`,
+                      content: imageBase64,
+                    },
+                  ],
+                  deliver: false,
+                },
+                { expectFinal: true },
+              );
+              if (imageProbe?.status !== "ok") {
+                throw new Error(
+                  `image probe failed: status=${String(imageProbe?.status)}`,
+                );
+              }
+              const imageText = extractPayloadText(imageProbe?.result);
+              if (!/\bcat\b/i.test(imageText)) {
+                throw new Error(`image probe missing 'cat': ${imageText}`);
+              }
+              const candidates =
+                imageText.toUpperCase().match(/[A-Z0-9]{6,20}/g) ?? [];
+              const bestDistance = candidates.reduce((best, cand) => {
+                if (Math.abs(cand.length - imageCode.length) > 2) return best;
+                return Math.min(best, editDistance(cand, imageCode));
+              }, Number.POSITIVE_INFINITY);
+              if (!(bestDistance <= 2)) {
+                throw new Error(
+                  `image probe missing code (${imageCode}): ${imageText}`,
+                );
+              }
             }
 
             // Regression: tool-call-only turn followed by a user message (OpenAI responses bug class).
