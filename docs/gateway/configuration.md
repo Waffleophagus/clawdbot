@@ -614,6 +614,8 @@ Controls how chat commands are enabled across connectors.
   commands: {
     native: false,          // register native commands when supported
     text: true,             // parse slash commands in chat messages
+    config: false,          // allow /config (writes to disk)
+    debug: false,           // allow /debug (runtime-only overrides)
     restart: false,         // allow /restart + gateway restart tool
     useAccessGroups: true   // enforce access-group allowlists/policies for commands
   }
@@ -625,6 +627,8 @@ Notes:
 - `commands.text: false` disables parsing chat messages for commands.
 - `commands.native: true` registers native commands on supported connectors (Discord/Slack/Telegram). Platforms without native commands still rely on text commands.
 - `commands.native: false` skips native registration; Discord/Telegram clear previously registered commands on startup. Slack commands are managed in the Slack app.
+- `commands.config: true` enables `/config` (reads/writes `clawdbot.json`).
+- `commands.debug: true` enables `/debug` (runtime-only overrides).
 - `commands.restart: true` enables `/restart` and the gateway tool restart action.
 - `commands.useAccessGroups: false` allows commands to bypass access-group allowlists/policies.
 
@@ -1771,6 +1775,44 @@ Example:
 }
 ```
 
+### `plugins` (extensions)
+
+Controls plugin discovery, allow/deny, and per-plugin config. Plugins are loaded
+from `~/.clawdbot/extensions`, `<workspace>/.clawdbot/extensions`, plus any
+`plugins.load.paths` entries. **Config changes require a gateway restart.**
+See [/plugin](/plugin) for full usage.
+
+Fields:
+- `enabled`: master toggle for plugin loading (default: true).
+- `allow`: optional allowlist of plugin ids; when set, only listed plugins load.
+- `deny`: optional denylist of plugin ids (deny wins).
+- `load.paths`: extra plugin files or directories to load (absolute or `~`).
+- `entries.<pluginId>`: per-plugin overrides.
+  - `enabled`: set `false` to disable.
+  - `config`: plugin-specific config object (validated by the plugin if provided).
+
+Example:
+
+```json5
+{
+  plugins: {
+    enabled: true,
+    allow: ["voice-call"],
+    load: {
+      paths: ["~/Projects/oss/voice-call-extension"]
+    },
+    entries: {
+      "voice-call": {
+        enabled: true,
+        config: {
+          provider: "twilio"
+        }
+      }
+    }
+  }
+}
+```
+
 ### `browser` (clawd-managed Chrome)
 
 Clawdbot can start a **dedicated, isolated** Chrome/Chromium instance for clawd and expose a small loopback control server.
@@ -1938,6 +1980,7 @@ Requires full Gateway restart:
 - `bridge`
 - `discovery`
 - `canvasHost`
+- `plugins`
 - Any unknown/unsupported config path (defaults to restart for safety)
 
 ### Multi-instance isolation
@@ -2014,7 +2057,7 @@ Mapping notes:
 - Templates like `{{messages[0].subject}}` read from the payload.
 - `transform` can point to a JS/TS module that returns a hook action.
 - `deliver: true` sends the final reply to a provider; `provider` defaults to `last` (falls back to WhatsApp).
-- If there is no prior delivery route, set `provider` + `to` explicitly (required for Telegram/Discord/Slack/Signal/iMessage).
+- If there is no prior delivery route, set `provider` + `to` explicitly (required for Telegram/Discord/Slack/Signal/iMessage/MS Teams).
 - `model` overrides the LLM for this hook run (`provider/model` or alias; must be allowed if `agents.defaults.models` is set).
 
 Gmail helper config (used by `clawdbot hooks gmail setup` / `run`):
@@ -2167,7 +2210,7 @@ Template placeholders are expanded in `tools.audio.transcription.args` (and any 
 | `{{GroupMembers}}` | Group members preview (best effort) |
 | `{{SenderName}}` | Sender display name (best effort) |
 | `{{SenderE164}}` | Sender phone number (best effort) |
-| `{{Provider}}` | Provider hint (whatsapp|telegram|discord|imessage|webchat|…) |
+| `{{Provider}}` | Provider hint (whatsapp|telegram|discord|slack|signal|imessage|msteams|webchat|…) |
 
 ## Cron (Gateway scheduler)
 

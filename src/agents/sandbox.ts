@@ -19,6 +19,7 @@ import {
   loadConfig,
   STATE_DIR_CLAWDBOT,
 } from "../config/config.js";
+import { PROVIDER_IDS } from "../providers/registry.js";
 import {
   buildAgentMainSessionKey,
   normalizeAgentId,
@@ -176,13 +177,14 @@ const DEFAULT_TOOL_ALLOW = [
   "sessions_spawn",
   "session_status",
 ];
+// Provider docking: keep sandbox policy aligned with provider tool names.
 const DEFAULT_TOOL_DENY = [
   "browser",
   "canvas",
   "nodes",
   "cron",
-  "discord",
   "gateway",
+  ...PROVIDER_IDS,
 ];
 export const DEFAULT_SANDBOX_BROWSER_IMAGE =
   "clawdbot-sandbox-browser:bookworm-slim";
@@ -1313,7 +1315,7 @@ export async function resolveSandboxContext(params: {
       agentWorkspaceDir,
       params.config?.agents?.defaults?.skipBootstrap,
     );
-    if (cfg.workspaceAccess === "none") {
+    if (cfg.workspaceAccess !== "rw") {
       try {
         await syncSkillsToWorkspace({
           sourceWorkspaceDir: agentWorkspaceDir,
@@ -1391,7 +1393,7 @@ export async function ensureSandboxWorkspaceForSession(params: {
       agentWorkspaceDir,
       params.config?.agents?.defaults?.skipBootstrap,
     );
-    if (cfg.workspaceAccess === "none") {
+    if (cfg.workspaceAccess !== "rw") {
       try {
         await syncSkillsToWorkspace({
           sourceWorkspaceDir: agentWorkspaceDir,

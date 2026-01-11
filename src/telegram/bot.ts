@@ -16,10 +16,9 @@ import {
 import { hasControlCommand } from "../auto-reply/command-detection.js";
 import {
   buildCommandText,
-  listNativeCommandSpecs,
+  listNativeCommandSpecsForConfig,
 } from "../auto-reply/commands-registry.js";
 import { formatAgentEnvelope } from "../auto-reply/envelope.js";
-import { resolveTelegramDraftStreamingChunking } from "../auto-reply/reply/block-streaming.js";
 import {
   buildHistoryContextFromMap,
   clearHistoryEntries,
@@ -62,6 +61,7 @@ import { resolveAgentRoute } from "../routing/resolve-route.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { loadWebMedia } from "../web/media.js";
 import { resolveTelegramAccount } from "./accounts.js";
+import { resolveTelegramDraftStreamingChunking } from "./draft-chunking.js";
 import { createTelegramDraftStream } from "./draft-stream.js";
 import { resolveTelegramFetch } from "./fetch.js";
 import { markdownToTelegramHtml } from "./format.js";
@@ -557,7 +557,7 @@ export function createTelegramBot(opts: TelegramBotOptions) {
       !wasMentioned &&
       !hasAnyMention &&
       commandAuthorized &&
-      hasControlCommand(msg.text ?? msg.caption ?? "");
+      hasControlCommand(msg.text ?? msg.caption ?? "", cfg);
     const effectiveWasMentioned = wasMentioned || shouldBypassMention;
     const canDetectMention = Boolean(botUsername) || mentionRegexes.length > 0;
     if (isGroup && requireMention && canDetectMention) {
@@ -907,7 +907,9 @@ export function createTelegramBot(opts: TelegramBotOptions) {
     }
   };
 
-  const nativeCommands = nativeEnabled ? listNativeCommandSpecs() : [];
+  const nativeCommands = nativeEnabled
+    ? listNativeCommandSpecsForConfig(cfg)
+    : [];
   if (nativeCommands.length > 0) {
     bot.api
       .setMyCommands(

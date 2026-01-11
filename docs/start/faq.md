@@ -7,30 +7,29 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
 
 ## First 60 seconds if something's broken
 
-1) **Run the doctor**
+1) **Quick status (first check)**
    ```bash
-   clawdbot doctor
+   clawdbot status
    ```
-   Repairs/migrates config/state + runs health checks. See [Doctor](/gateway/doctor).
+   Fast local summary: OS + update, gateway/daemon reachability, agents/sessions, provider config + runtime issues (when gateway is reachable).
 
-2) **Daemon + port state**
+2) **Pasteable report (safe to share)**
+   ```bash
+   clawdbot status --all
+   ```
+   Read-only diagnosis with log tail (tokens redacted).
+
+3) **Daemon + port state**
    ```bash
    clawdbot daemon status
    ```
    Shows supervisor runtime vs RPC reachability, the probe target URL, and which config the daemon likely used.
 
-3) **Local probes**
+4) **Deep probes**
    ```bash
    clawdbot status --deep
    ```
-   Checks provider connectivity and local health. See [Health](/gateway/health).
-
-4) **Gateway snapshot**
-   ```bash
-   clawdbot health --json
-   clawdbot health --verbose   # shows the target URL + config path on errors
-   ```
-   Asks the running gateway for a full snapshot (WS-only). See [Health](/gateway/health).
+   Runs gateway health checks + provider probes (requires a reachable gateway). See [Health](/gateway/health).
 
 5) **Tail the latest log**
    ```bash
@@ -41,6 +40,19 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
    tail -f "$(ls -t /tmp/clawdbot/clawdbot-*.log | head -1)"
    ```
    File logs are separate from service logs; see [Logging](/logging) and [Troubleshooting](/gateway/troubleshooting).
+
+6) **Run the doctor (repairs)**
+   ```bash
+   clawdbot doctor
+   ```
+   Repairs/migrates config/state + runs health checks. See [Doctor](/gateway/doctor).
+
+7) **Gateway snapshot**
+   ```bash
+   clawdbot health --json
+   clawdbot health --verbose   # shows the target URL + config path on errors
+   ```
+   Asks the running gateway for a full snapshot (WS-only). See [Health](/gateway/health).
 
 ## What is Clawdbot?
 
@@ -150,6 +162,10 @@ Legacy single‑agent path: `~/.clawdbot/agent/*` (migrated by `clawdbot doctor`
 
 Your **workspace** (AGENTS.md, memory files, skills, etc.) is separate and configured via `agents.defaults.workspace` (default: `~/clawd`).
 
+### How do I completely uninstall Clawdbot?
+
+See the dedicated guide: [Uninstall](/install/uninstall).
+
 ### Can agents work outside the workspace?
 
 Yes. The workspace is the **default cwd** and memory anchor, not a hard sandbox.
@@ -219,6 +235,22 @@ The Gateway watches the config and supports hot‑reload:
 - `gateway.reload.mode: "hybrid"` (default): hot‑apply safe changes, restart for critical ones
 - `hot`, `restart`, `off` are also supported
 
+## Remote gateways + nodes
+
+### How do commands propagate between Telegram, the gateway, and nodes?
+
+Telegram messages are handled by the **gateway**. The gateway runs the agent and
+only then calls nodes over the **Bridge** when a node tool is needed:
+
+Telegram → Gateway → Agent → `node.*` → Node → Gateway → Telegram
+
+Nodes don’t see inbound provider traffic; they only receive bridge RPC calls.
+
+### Do nodes run a gateway daemon?
+
+No. Only **one gateway** should run per host. Nodes are peripherals that connect
+to the gateway (iOS/Android nodes, or macOS “node mode” in the menubar app).
+
 A full restart is required for `gateway`, `bridge`, `discovery`, and `canvasHost` changes.
 
 ### Is there an API / RPC way to apply config?
@@ -286,6 +318,31 @@ This runs your login shell and imports only missing expected keys (never overrid
 ### How do I start a fresh conversation?
 
 Send `/new` or `/reset` as a standalone message. See [Session management](/concepts/session).
+
+### How do I completely reset Clawdbot (but keep it installed)?
+
+Use the reset command:
+
+```bash
+clawdbot reset
+```
+
+Non-interactive full reset:
+
+```bash
+clawdbot reset --scope full --yes --non-interactive
+```
+
+Then re-run onboarding:
+
+```bash
+clawdbot onboard --install-daemon
+```
+
+Notes:
+- The onboarding wizard also offers **Reset** if it sees an existing config. See [Wizard](/start/wizard).
+- If you used profiles (`--profile` / `CLAWDBOT_PROFILE`), reset each state dir (defaults are `~/.clawdbot-<profile>`).
+- Dev reset: `clawdbot gateway --dev --reset` (dev-only; wipes dev config + credentials + sessions + workspace).
 
 ### Do I need to add a “bot account” to a WhatsApp group?
 
@@ -606,6 +663,8 @@ Yes, but you must isolate:
 - `gateway.port` (unique ports)
 
 There are convenience CLI flags like `--dev` and `--profile <name>` that shift state dirs and ports.
+When using profiles, service names are suffixed (`com.clawdbot.<profile>`, `clawdbot-gateway-<profile>.service`,
+`Clawdbot Gateway (<profile>)`).
 
 ## Logging and debugging
 
@@ -627,8 +686,8 @@ clawdbot logs --follow
 
 Service/supervisor logs (when the gateway runs via launchd/systemd):
 - macOS: `$CLAWDBOT_STATE_DIR/logs/gateway.log` and `gateway.err.log` (default: `~/.clawdbot/logs/...`; profiles use `~/.clawdbot-<profile>/logs/...`)
-- Linux: `journalctl --user -u clawdbot-gateway.service -n 200 --no-pager`
-- Windows: `schtasks /Query /TN "Clawdbot Gateway" /V /FO LIST`
+- Linux: `journalctl --user -u clawdbot-gateway[-<profile>].service -n 200 --no-pager`
+- Windows: `schtasks /Query /TN "Clawdbot Gateway (<profile>)" /V /FO LIST`
 
 See [Troubleshooting](/gateway/troubleshooting#log-locations) for more.
 

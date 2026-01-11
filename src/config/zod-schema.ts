@@ -127,7 +127,12 @@ const HumanDelaySchema = z.object({
 const CliBackendSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
-  output: z.union([z.literal("json"), z.literal("text")]).optional(),
+  output: z
+    .union([z.literal("json"), z.literal("text"), z.literal("jsonl")])
+    .optional(),
+  resumeOutput: z
+    .union([z.literal("json"), z.literal("text"), z.literal("jsonl")])
+    .optional(),
   input: z.union([z.literal("arg"), z.literal("stdin")]).optional(),
   maxPromptArgChars: z.number().int().positive().optional(),
   env: z.record(z.string(), z.string()).optional(),
@@ -135,6 +140,8 @@ const CliBackendSchema = z.object({
   modelArg: z.string().optional(),
   modelAliases: z.record(z.string(), z.string()).optional(),
   sessionArg: z.string().optional(),
+  sessionArgs: z.array(z.string()).optional(),
+  resumeArgs: z.array(z.string()).optional(),
   sessionMode: z
     .union([z.literal("always"), z.literal("existing"), z.literal("none")])
     .optional(),
@@ -685,6 +692,8 @@ const CommandsSchema = z
   .object({
     native: z.boolean().optional(),
     text: z.boolean().optional(),
+    config: z.boolean().optional(),
+    debug: z.boolean().optional(),
     restart: z.boolean().optional(),
     useAccessGroups: z.boolean().optional(),
   })
@@ -795,16 +804,9 @@ const ToolPolicySchema = z
   })
   .optional();
 
+// Provider docking: allowlists keyed by provider id (no schema updates when adding providers).
 const ElevatedAllowFromSchema = z
-  .object({
-    whatsapp: z.array(z.string()).optional(),
-    telegram: z.array(z.union([z.string(), z.number()])).optional(),
-    discord: z.array(z.union([z.string(), z.number()])).optional(),
-    slack: z.array(z.union([z.string(), z.number()])).optional(),
-    signal: z.array(z.union([z.string(), z.number()])).optional(),
-    imessage: z.array(z.union([z.string(), z.number()])).optional(),
-    webchat: z.array(z.union([z.string(), z.number()])).optional(),
-  })
+  .record(z.string(), z.array(z.union([z.string(), z.number()])))
   .optional();
 
 const AgentSandboxSchema = z
@@ -1366,6 +1368,16 @@ export const ClawdbotSchema = z
                       .optional(),
                   )
                   .optional(),
+                ackReaction: z
+                  .object({
+                    emoji: z.string().optional(),
+                    direct: z.boolean().optional().default(true),
+                    group: z
+                      .enum(["always", "mentions", "never"])
+                      .optional()
+                      .default("mentions"),
+                  })
+                  .optional(),
               })
               .superRefine((value, ctx) => {
                 if (value.dmPolicy !== "open") return;
@@ -1411,6 +1423,16 @@ export const ClawdbotSchema = z
               })
               .optional(),
           )
+          .optional(),
+        ackReaction: z
+          .object({
+            emoji: z.string().optional(),
+            direct: z.boolean().optional().default(true),
+            group: z
+              .enum(["always", "mentions", "never"])
+              .optional()
+              .default("mentions"),
+          })
           .optional(),
       })
       .superRefine((value, ctx) => {
@@ -1580,6 +1602,29 @@ export const ClawdbotSchema = z
                 enabled: z.boolean().optional(),
                 apiKey: z.string().optional(),
                 env: z.record(z.string(), z.string()).optional(),
+              })
+              .passthrough(),
+          )
+          .optional(),
+      })
+      .optional(),
+    plugins: z
+      .object({
+        enabled: z.boolean().optional(),
+        allow: z.array(z.string()).optional(),
+        deny: z.array(z.string()).optional(),
+        load: z
+          .object({
+            paths: z.array(z.string()).optional(),
+          })
+          .optional(),
+        entries: z
+          .record(
+            z.string(),
+            z
+              .object({
+                enabled: z.boolean().optional(),
+                config: z.record(z.string(), z.unknown()).optional(),
               })
               .passthrough(),
           )

@@ -47,10 +47,20 @@ Windows: use **WSL2** (Ubuntu recommended). WSL2 is strongly recommended; native
 ## 1) Install the CLI (recommended)
 
 ```bash
-npm install -g clawdbot@latest
+curl -fsSL https://clawd.bot/install.sh | bash
 ```
 
-Or:
+Windows (PowerShell):
+
+```powershell
+iwr -useb https://clawd.bot/install.ps1 | iex
+```
+
+Alternative (global install):
+
+```bash
+npm install -g clawdbot@latest
+```
 
 ```bash
 pnpm add -g clawdbot@latest
@@ -160,14 +170,15 @@ node dist/entry.js gateway --port 18789 --verbose
 In a new terminal:
 
 ```bash
+clawdbot status
 clawdbot health
 clawdbot message send --to +15555550123 --message "Hello from Clawdbot"
 ```
 
 If `health` shows “no auth configured”, go back to the wizard and set OAuth/key auth — the agent won’t be able to respond without it.
 
-Local probe tip: `clawdbot status --deep` runs provider checks without needing a gateway connection.
-Gateway snapshot: `clawdbot providers status` shows what the gateway reports (use `status --deep` for local-only probes).
+Tip: `clawdbot status --all` is the best pasteable, read-only debug report.
+Health probes: `clawdbot health` (or `clawdbot status --deep`) asks the running gateway for a health snapshot.
 
 ## Next steps (optional, but great)
 

@@ -101,16 +101,10 @@ export type WebConfig = {
   reconnect?: WebReconnectConfig;
 };
 
-export type AgentElevatedAllowFromConfig = {
-  whatsapp?: string[];
-  telegram?: Array<string | number>;
-  discord?: Array<string | number>;
-  slack?: Array<string | number>;
-  signal?: Array<string | number>;
-  imessage?: Array<string | number>;
-  msteams?: Array<string | number>;
-  webchat?: Array<string | number>;
-};
+// Provider docking: allowlists keyed by provider id (and internal "webchat").
+export type AgentElevatedAllowFromConfig = Partial<
+  Record<string, Array<string | number>>
+>;
 
 export type IdentityConfig = {
   name?: string;
@@ -169,6 +163,21 @@ export type WhatsAppConfig = {
       requireMention?: boolean;
     }
   >;
+  /** Acknowledgment reaction sent immediately upon message receipt. */
+  ackReaction?: {
+    /** Emoji to use for acknowledgment (e.g., "👀"). Empty = disabled. */
+    emoji?: string;
+    /** Send reactions in direct chats. Default: true. */
+    direct?: boolean;
+    /**
+     * Send reactions in group chats:
+     * - "always": react to all group messages
+     * - "mentions": react only when bot is mentioned
+     * - "never": never react in groups
+     * Default: "mentions"
+     */
+    group?: "always" | "mentions" | "never";
+  };
 };
 
 export type WhatsAppAccountConfig = {
@@ -202,6 +211,21 @@ export type WhatsAppAccountConfig = {
       requireMention?: boolean;
     }
   >;
+  /** Acknowledgment reaction sent immediately upon message receipt. */
+  ackReaction?: {
+    /** Emoji to use for acknowledgment (e.g., "👀"). Empty = disabled. */
+    emoji?: string;
+    /** Send reactions in direct chats. Default: true. */
+    direct?: boolean;
+    /**
+     * Send reactions in group chats:
+     * - "always": react to all group messages
+     * - "mentions": react only when bot is mentioned
+     * - "never": never react in groups
+     * Default: "mentions"
+     */
+    group?: "always" | "mentions" | "never";
+  };
 };
 
 export type BrowserProfileConfig = {
@@ -1078,6 +1102,10 @@ export type CommandsConfig = {
   native?: boolean;
   /** Enable text command parsing (default: true). */
   text?: boolean;
+  /** Allow /config command (default: false). */
+  config?: boolean;
+  /** Allow /debug command (default: false). */
+  debug?: boolean;
   /** Allow restart commands/tools (default: false). */
   restart?: boolean;
   /** Enforce access-group allowlists/policies for commands (default: true). */
@@ -1248,6 +1276,27 @@ export type SkillsConfig = {
   entries?: Record<string, SkillConfig>;
 };
 
+export type PluginEntryConfig = {
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+};
+
+export type PluginsLoadConfig = {
+  /** Additional plugin/extension paths to load. */
+  paths?: string[];
+};
+
+export type PluginsConfig = {
+  /** Enable or disable plugin loading. */
+  enabled?: boolean;
+  /** Optional plugin allowlist (plugin ids). */
+  allow?: string[];
+  /** Optional plugin denylist (plugin ids). */
+  deny?: string[];
+  load?: PluginsLoadConfig;
+  entries?: Record<string, PluginEntryConfig>;
+};
+
 export type ModelApi =
   | "openai-completions"
   | "openai-responses"
@@ -1361,7 +1410,9 @@ export type CliBackendConfig = {
   /** Base args applied to every invocation. */
   args?: string[];
   /** Output parsing mode (default: json). */
-  output?: "json" | "text";
+  output?: "json" | "text" | "jsonl";
+  /** Output parsing mode when resuming a CLI session. */
+  resumeOutput?: "json" | "text" | "jsonl";
   /** Prompt input mode (default: arg). */
   input?: "arg" | "stdin";
   /** Max prompt length for arg mode (if exceeded, stdin is used). */
@@ -1376,6 +1427,10 @@ export type CliBackendConfig = {
   modelAliases?: Record<string, string>;
   /** Flag used to pass session id (e.g. --session-id). */
   sessionArg?: string;
+  /** Extra args used when resuming a session (use {sessionId} placeholder). */
+  sessionArgs?: string[];
+  /** Alternate args to use when resuming a session (use {sessionId} placeholder). */
+  resumeArgs?: string[];
   /** When to pass session ids. */
   sessionMode?: "always" | "existing" | "none";
   /** JSON fields to read session id from (in order). */
@@ -1546,6 +1601,7 @@ export type ClawdbotConfig = {
     seamColor?: string;
   };
   skills?: SkillsConfig;
+  plugins?: PluginsConfig;
   models?: ModelsConfig;
   agents?: AgentsConfig;
   tools?: ToolsConfig;
